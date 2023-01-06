@@ -66,6 +66,7 @@ const float inertia = 0.1f;
 ParticleRenderer::DisplayMode displayMode =
     ParticleRenderer::PARTICLE_SPRITES_COLOR;
 
+bool stresstest = false;
 bool benchmark = false;
 bool compareToCPU = false;
 bool QATest = false;
@@ -959,6 +960,7 @@ int main(int argc, char **argv) {
   }
 
   benchmark = (checkCmdLineFlag(argc, (const char **)argv, "benchmark") != 0);
+  stresstest = (checkCmdLineFlag(argc, (const char **)argv, "stresstest") != 0);
 
   compareToCPU =
       ((checkCmdLineFlag(argc, (const char **)argv, "compare") != 0) ||
@@ -1043,7 +1045,7 @@ int main(int argc, char **argv) {
   }
 
   // Initialize GL and GLUT if necessary
-  if (!benchmark && !compareToCPU) {
+  if (!benchmark && !compareToCPU && !stresstest) {
     initGL(&argc, argv);
     initParameters();
   }
@@ -1231,14 +1233,14 @@ int main(int argc, char **argv) {
   NBodyDemo<float>::Create();
 
   NBodyDemo<float>::init(numBodies, numDevsRequested, blockSize,
-                         !(benchmark || compareToCPU || useHostMem), useHostMem,
+                         !(benchmark || compareToCPU || useHostMem || stresstest), useHostMem,
                          useP2P, useCpu, devID);
   NBodyDemo<float>::reset(numBodies, NBODY_CONFIG_SHELL);
 
   if (bSupportDouble) {
     NBodyDemo<double>::Create();
     NBodyDemo<double>::init(numBodies, numDevsRequested, blockSize,
-                            !(benchmark || compareToCPU || useHostMem),
+                            !(benchmark || compareToCPU || useHostMem || stresstest),
                             useHostMem, useP2P, useCpu, devID);
     NBodyDemo<double>::reset(numBodies, NBODY_CONFIG_SHELL);
   }
@@ -1279,6 +1281,12 @@ int main(int argc, char **argv) {
       }
 
       NBodyDemo<float>::runBenchmark(numIterations);
+    } else if (stresstest) {
+      numIterations = 1000;
+
+      while (true) {
+        NBodyDemo<float>::runBenchmark(numIterations);
+      }
     } else if (compareToCPU) {
       bTestResults = NBodyDemo<float>::compareResults(numBodies);
     } else {
