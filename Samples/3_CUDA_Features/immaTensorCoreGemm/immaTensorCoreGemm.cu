@@ -76,7 +76,7 @@
 
 #ifndef CPU_DEBUG
 // Set this to 1 to verify the correctness of the GPU-computed matrix.
-#define CPU_DEBUG 1
+#define CPU_DEBUG 0
 #endif
 
 #ifndef SHARED_MEMORY_LIMIT_64K
@@ -103,9 +103,9 @@
 
 // GEMM configuration.
 
-#define M_TILES 256
-#define N_TILES 256
-#define K_TILES 256
+#define M_TILES 1024
+#define N_TILES 2048
+#define K_TILES 2048
 
 #define M_GLOBAL (M * M_TILES)
 #define N_GLOBAL (N * N_TILES)
@@ -187,15 +187,21 @@ __host__ void init_host_matrices(uint8_t *a, uint8_t *b, int *c) {
     }
   }
 
+  printf("A generated\n");
+
   for (int i = 0; i < N_GLOBAL; i++) {
     for (int j = 0; j < K_GLOBAL; j++) {
       b[i * K_GLOBAL + j] = (uint8_t)(rand() % 3);
     }
   }
 
+  printf("B generated\n");
+
   for (int t = 0; t < M_GLOBAL * N_GLOBAL; t++) {
     c[t] = (rand() % 3);
   }
+
+  printf("C generated\n");
 }
 
 __global__ void compute_gemm_imma(const uint8_t *A, const uint8_t *B,
@@ -526,11 +532,18 @@ int main(int argc, char **argv) {
   int *C = NULL;
   int *D = NULL;
 
+  printf("Bytes to allocate for the A matrix %ld\n", sizeof(uint8_t) * M_GLOBAL * K_GLOBAL);
+
   checkCudaErrors(
       cudaMalloc(reinterpret_cast<void **>(&A), sizeof(uint8_t) * M_GLOBAL * K_GLOBAL));
+
+  printf("Bytes to allocate for the B matrix %ld\n", sizeof(uint8_t) * K_GLOBAL * N_GLOBAL);
   checkCudaErrors(
       cudaMalloc(reinterpret_cast<void **>(&B), sizeof(uint8_t) * N_GLOBAL * K_GLOBAL));
+
+  printf("Bytes to allocate for the C matrix %ld\n", sizeof(int) * M_GLOBAL * N_GLOBAL);
   checkCudaErrors(cudaMalloc(reinterpret_cast<void **>(&C), sizeof(int) * M_GLOBAL * N_GLOBAL));
+  printf("Prepping the D matrix (same size as C)\n");
   checkCudaErrors(cudaMalloc(reinterpret_cast<void **>(&D), sizeof(int) * M_GLOBAL * N_GLOBAL));
 
   assert(((unsigned long long)A) % 128 == 0);
@@ -540,6 +553,14 @@ int main(int argc, char **argv) {
 
   init_host_matrices(A_h, B_h, C_h);
 
+  printf("Initialized host matrices\n");
+
+  cudaEvent_t copy_start, copy_stop;
+
+  checkCudaErrors(cudaEventCreate(&copy_start));
+  checkCudaErrors(cudaEventCreate(&copy_stop));
+  checkCudaErrors(cudaEventRecord(copy_start));
+
   checkCudaErrors(cudaMemcpy(A, A_h, sizeof(uint8_t) * M_GLOBAL * K_GLOBAL,
                              cudaMemcpyHostToDevice));
   checkCudaErrors(cudaMemcpy(B, B_h, sizeof(uint8_t) * N_GLOBAL * K_GLOBAL,
@@ -547,6 +568,14 @@ int main(int argc, char **argv) {
   checkCudaErrors(cudaMemcpy(C, C_h, sizeof(int) * M_GLOBAL * N_GLOBAL,
                              cudaMemcpyHostToDevice));
   checkCudaErrors(cudaMemset(D, 0, sizeof(int) * M_GLOBAL * N_GLOBAL));
+
+  checkCudaErrors(cudaEventRecord(copy_stop));
+  checkCudaErrors(cudaEventSynchronize(copy_stop));
+
+  float copy_milliseconds;
+  checkCudaErrors(cudaEventElapsedTime(&copy_milliseconds, copy_start, copy_stop));
+
+  printf("Memory ops took %f ms\n", copy_milliseconds);
 
   printf("Preparing data for GPU...\n");
 
@@ -578,6 +607,8 @@ int main(int argc, char **argv) {
   checkCudaErrors(cudaEventCreate(&start));
   checkCudaErrors(cudaEventCreate(&stop));
   checkCudaErrors(cudaEventRecord(start));
+
+  printf("hardware's sharedMemPerMultiprocessor is %lu\n", deviceProp.sharedMemPerMultiprocessor);
 
   // If enough shared memory available on the GPU use high performant kernel
   if (deviceProp.sharedMemPerMultiprocessor >= SHMEM_SZ) {
@@ -627,6 +658,11 @@ int main(int argc, char **argv) {
                     K_GLOBAL, N_GLOBAL, M_GLOBAL, N_GLOBAL);
 
   for (int i = 0; i < N_GLOBAL * M_GLOBAL; i++) {
+    if (!(i % 100)) {
+      // Weird -- printing is not flushing, no matter how much output i generate. might be nvcc 
+      // weirdness.
+      printf("Checking has reached index %d out of %d...\n", i, M_GLOBAL * N_GLOBAL);
+    }
     if (abs(result_hD[i] - result_host[i]) > 0) {
       printf("mismatch i=%d result_hD=%d result_host=%d\n", i, result_hD[i],
              result_host[i]);
