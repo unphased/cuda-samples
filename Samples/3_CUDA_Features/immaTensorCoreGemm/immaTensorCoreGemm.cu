@@ -76,7 +76,7 @@
 
 #ifndef CPU_DEBUG
 // Set this to 1 to verify the correctness of the GPU-computed matrix.
-#define CPU_DEBUG 0
+#define CPU_DEBUG 1
 #endif
 
 #ifndef SHARED_MEMORY_LIMIT_64K
