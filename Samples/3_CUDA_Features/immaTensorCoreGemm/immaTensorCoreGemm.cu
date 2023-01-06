@@ -614,12 +614,14 @@ int main(int argc, char **argv) {
   if (deviceProp.sharedMemPerMultiprocessor >= SHMEM_SZ) {
     printf("Computing... using high performance kernel compute_gemm_imma \n");
 
-    checkCudaErrors(cudaFuncSetAttribute(
-        compute_gemm_imma, cudaFuncAttributeMaxDynamicSharedMemorySize,
-        SHMEM_SZ));
-    checkKernelErrors(
-        (compute_gemm_imma<<<deviceProp.multiProcessorCount, THREADS_PER_BLOCK,
-                             SHMEM_SZ>>>(A, B, C, D, alpha, beta)));
+    while (true) {
+      checkCudaErrors(cudaFuncSetAttribute(
+            compute_gemm_imma, cudaFuncAttributeMaxDynamicSharedMemorySize,
+            SHMEM_SZ));
+      checkKernelErrors(
+          (compute_gemm_imma<<<deviceProp.multiProcessorCount, THREADS_PER_BLOCK,
+           SHMEM_SZ>>>(A, B, C, D, alpha, beta)));
+    }
 #if CPU_DEBUG
     checkCudaErrors(cudaMemcpy(result_hD, D, sizeof(int) * M_GLOBAL * N_GLOBAL,
                                cudaMemcpyDeviceToHost));
